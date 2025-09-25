@@ -5,7 +5,6 @@ import android.app.Application
 import android.app.Instrumentation
 import android.content.res.XModuleResources
 import android.content.res.XResources
-import com.sandyz.virtualcam.BuildConfig
 import com.sandyz.virtualcam.hooks.IHook
 import com.sandyz.virtualcam.hooks.VirtualCameraUniversal
 import com.sandyz.virtualcam.utils.HookUtils
@@ -29,6 +28,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
 class HookMain : IXposedHookLoadPackage, IXposedHookZygoteInit, IXposedHookInitPackageResources {
 
     companion object {
+        private const val MODULE_PACKAGE = "com.sandyz.virtualcam"
         public var modulePath: String? = null
         private var moduleRes: String? = null
         var xResources: XResources? = null
@@ -101,7 +101,7 @@ class HookMain : IXposedHookLoadPackage, IXposedHookZygoteInit, IXposedHookInitP
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
         HookUtils.init(lpparam)
 
-        if (lpparam.packageName == null || lpparam.packageName == BuildConfig.APPLICATION_ID) {
+        if (lpparam.packageName == null || lpparam.packageName == MODULE_PACKAGE) {
             xLog("skip init for package: ${lpparam.packageName} process: ${lpparam.processName}")
             return
         }
