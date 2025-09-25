@@ -10,7 +10,6 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
  */
 
 interface IHook {
-    fun getSupportedPackages(): List<String>
     fun getName(): String
     fun hook(lpparam: LoadPackageParam?)
     fun init(cl: ClassLoader?)
