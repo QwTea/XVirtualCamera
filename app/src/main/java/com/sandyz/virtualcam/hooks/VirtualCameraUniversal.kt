@@ -37,6 +37,10 @@ import kotlin.math.min
 
 class VirtualCameraUniversal : IHook {
 
+    private fun logHookFailure(point: String, throwable: Throwable) {
+        xLog("[VirtualCameraUniversal::$point] ${throwable.stackTraceToString()}")
+    }
+
     override fun getName(): String = "通用虚拟摄像头模块"
 
     private val camera2Pipeline = Camera2Pipeline()
@@ -95,7 +99,8 @@ class VirtualCameraUniversal : IHook {
                         }
                     }
                 )
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera2.hookImageReader", throwable)
             }
         }
 
@@ -135,7 +140,8 @@ class VirtualCameraUniversal : IHook {
                         }
                     }
                 )
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera2.hookCreateCaptureSessionApi28", throwable)
             }
         }
 
@@ -165,7 +171,8 @@ class VirtualCameraUniversal : IHook {
                         }
                     }
                 )
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera2.hookCreateCaptureSessionLegacy", throwable)
             }
         }
 
@@ -197,8 +204,8 @@ class VirtualCameraUniversal : IHook {
                         }
                     }
                 )
-            } catch (_: Throwable) {
-                xLog("oppo createCustomCaptureSession not available")
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera2.hookOppoCreateCaptureSession", throwable)
             }
         }
 
@@ -226,7 +233,8 @@ class VirtualCameraUniversal : IHook {
                         }
                     }
                 )
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera2.hookAddTarget", throwable)
             }
         }
 
@@ -238,7 +246,8 @@ class VirtualCameraUniversal : IHook {
                         xLog("TextureView constructed:${param.thisObject}")
                     }
                 })
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera2.hookTextureViewConstructors", throwable)
             }
         }
 
@@ -258,7 +267,8 @@ class VirtualCameraUniversal : IHook {
                         }
                     }
                 )
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera2.hookSessionStateCallback.onConfigured", throwable)
             }
 
             try {
@@ -272,7 +282,8 @@ class VirtualCameraUniversal : IHook {
                         }
                     }
                 )
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera2.hookSessionStateCallback.onConfigureFailed", throwable)
             }
         }
 
@@ -348,7 +359,8 @@ class VirtualCameraUniversal : IHook {
                         }
                     }
                 )
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera1.hookStartPreview", throwable)
             }
         }
 
@@ -365,7 +377,8 @@ class VirtualCameraUniversal : IHook {
                         }
                     }
                 )
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera1.hookStopPreview", throwable)
             }
         }
 
@@ -386,7 +399,8 @@ class VirtualCameraUniversal : IHook {
                         }
                     }
                 )
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera1.hookSetPreviewCallbackWithBuffer", throwable)
             }
         }
 
@@ -407,7 +421,8 @@ class VirtualCameraUniversal : IHook {
                         }
                     }
                 )
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera1.hookSetPreviewCallback", throwable)
             }
         }
 
@@ -437,7 +452,8 @@ class VirtualCameraUniversal : IHook {
                         }
                     }
                 )
-            } catch (_: Throwable) {
+            } catch (throwable: Throwable) {
+                logHookFailure("Camera1.hookPreviewCallback", throwable)
             }
         }
 
@@ -511,7 +527,7 @@ class VirtualCameraUniversal : IHook {
                         delay(interval - cost)
                     }
                 } catch (throwable: Throwable) {
-                    xLog("drawer exception:$throwable")
+                    logHookFailure("Camera1.drawer", throwable)
                     stopPreview()
                     return
                 }

@@ -71,7 +71,8 @@ class HookMain : IXposedHookLoadPackage, IXposedHookZygoteInit, IXposedHookInitP
                 try {
                     System.load(it)
                     xLog("loadNative success $it")
-                } catch (_: Throwable) {
+                } catch (throwable: Throwable) {
+                    xLog("[HookMain.loadNative] failed to load $it\n${throwable.stackTraceToString()}")
                 }
             }
         }
