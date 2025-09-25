@@ -31,16 +31,13 @@ Other plugins are not effective in other places (because they have not been test
 
 ## Usage
 
-You can use **network video**, **video stream**, or **local video** as the video source for the virtual camera.
+You can use **local video** as the video source for the virtual camera.
 
-- 1. Please manually open the plugin in the Xposed Manager and select the scope APP.
-- 2. Please edit the network video address in `/storage/emulated/0/Android/data/[the package name of the app you want to use the virtual camera with]/cache/stream.txt`, making sure there are no extra blank lines.
-- 3. When `stream.txt` does not exist or its content is empty, use `/storage/emulated/0/Android/data/[package name]/cache/virtual.mp4` as the video source for the virtual camera.
+- 1. Please manually enable the plugin in the Xposed Manager and select the target app for the scope.
+- 2. Create the directory `/storage/emulated/0/Android/data/[the package name of the app you want to use the virtual camera with]/files/Camera1/` on the device if it does not already exist.
+- 3. Rename the video you want to play to `virtual.mp4` and place it in that directory. The plugin only reads this file as the virtual camera content.
 
-Network video supports streaming media protocols such as http, rtsp, rtmp, rtp, etc., while local video supports video formats such as mp4.
-
-**Recommended solution for streaming:** OBS live streaming + Nginx reverse proxy (for specific tutorials, please search for the keywords "setting up live streaming service with OBS and Nginx"), 
-then fill in stream.txt with: rtmp://local IP address:port number/name (for example: rtmp://172.20.10.6:1935/live). The delay is approximately 2 to 3 seconds.
+**Recommended approach for streaming content:** Use OBS to record to a local mp4 file, then replace `virtual.mp4` in the directory above via USB transfer, `adb push`, or a network sync tool. This lets you keep the virtual camera feed updated with your latest recording.
 
 
 ## Disclaimer

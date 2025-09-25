@@ -34,16 +34,13 @@ A virtual camera module based on the Xposed framework suitable for Android 9.0 a
 
 ## 使用方法
 
-可以以**网络视频**、**视频流**或者**本地视频**作为虚拟摄像头的视频源。
+可以以**本地视频**作为虚拟摄像头的视频源。
 
 - 1、请手动到Xposed管理器打开插件并且选择作用域APP。
-- 2、请在`/storage/emulated/0/Android/data/[你要使用虚拟摄像头的应用包名例如]/cache/stream.txt`中编辑网络视频的地址，注意不要有多的空行。
-- 3、当`stream.txt`不存在或内容为空时，使用`/storage/emulated/0/Android/data/[包名]/cache/virtual.mp4`作为虚拟摄像头的视频源。
+- 2、在设备上创建目录`/storage/emulated/0/Android/data/[你要使用虚拟摄像头的应用包名]/files/Camera1/`（若不存在）。
+- 3、将需要播放的视频命名为`virtual.mp4`并放入上述目录，插件只会读取此文件作为虚拟摄像头内容。
 
-网络视频支持http、rtsp、rtmp、rtp等流媒体协议，本地视频支持mp4等视频格式。
-
-**使用推流建议解决方案：** OBS直播推流 + Nginx反向代理（具体教程请搜索关键词“利用obs和nginx搭建直播流服务”），
-   然后在stream.txt中填写：rtmp://局域网地址:端口号/名称（例如：rtmp://172.20.10.6:1935/live）。延迟大概在2～3秒。
+**推流内容推荐方案：** 使用 OBS 录制到本地 mp4 文件，然后通过数据线、ADB push 或网络同步的方式将录制好的文件覆盖为上述目录中的`virtual.mp4`。这样即可用实时录制内容更新虚拟摄像头画面。
 
 
 ## 免责声明
