@@ -3,9 +3,7 @@ package com.sandyz.virtualcam.utils
 import android.view.Surface
 import android.widget.Toast
 import tv.danmaku.ijk.media.player.IjkMediaPlayer
-import java.io.BufferedReader
 import java.io.File
-import java.io.FileReader
 
 /**
  *@author sandyz987
@@ -30,34 +28,28 @@ object PlayIjk {
             toast(HookUtils.app, "播放失败！", Toast.LENGTH_SHORT)
             return
         }
-        val filePath = HookUtils.app?.externalCacheDir?.path?.toString() + "/stream.txt"
-        var urlStr = ""
-        try {
-            File(filePath).let {
-                if (!it.exists()) {
-                    it.createNewFile()
-                }
-                val reader = BufferedReader(FileReader(it))
-                urlStr = reader.readLine() ?: ""
-                reader.close()
-            }
-        } catch (e: Exception) {
-            toast(HookUtils.app, "读取失败！", Toast.LENGTH_SHORT)
-            xLog("读取失败！")
+        val baseDir = HookUtils.app?.getExternalFilesDir(null)
+        if (baseDir == null) {
+            toast(HookUtils.app, "无法访问外部文件目录！", Toast.LENGTH_SHORT)
+            xLog("无法访问外部文件目录！")
+            return
         }
-        if (urlStr.isBlank()) {
-            urlStr = HookUtils.app?.externalCacheDir?.path?.toString() + "/virtual.mp4"
-            if (File(urlStr).exists()) {
-                toast(HookUtils.app, "播放本地视频：$urlStr", Toast.LENGTH_LONG)
-                xLog("播放本地视频：$urlStr")
-            } else {
-                toast(HookUtils.app, "请前往${filePath}输入视频地址！或者查看插件使用说明！", Toast.LENGTH_LONG)
-                xLog("请前往${filePath}输入视频地址！或者查看插件使用说明！")
-                return
-            }
-        } else {
-            urlStr = urlStr.replace("https", "http")
+        val cameraDir = File(baseDir, "Camera1")
+        if (!cameraDir.exists() && !cameraDir.mkdirs()) {
+            toast(HookUtils.app, "创建Camera1目录失败！", Toast.LENGTH_SHORT)
+            xLog("创建Camera1目录失败！${cameraDir.absolutePath}")
+            return
         }
+        val virtualFile = File(cameraDir, "virtual.mp4")
+        if (!virtualFile.exists()) {
+            val message = "请将virtual.mp4放置在files/Camera1/目录 (${cameraDir.absolutePath})"
+            toast(HookUtils.app, message, Toast.LENGTH_LONG)
+            xLog(message)
+            return
+        }
+        val urlStr = virtualFile.absolutePath
+        toast(HookUtils.app, "播放本地视频：$urlStr", Toast.LENGTH_LONG)
+        xLog("播放本地视频：$urlStr")
         vSurface.let {
             ijkMP.setSurface(it)
             ijkMP.isLooping = true
