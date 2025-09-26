@@ -37,10 +37,8 @@ class HookMain : IXposedHookLoadPackage, IXposedHookZygoteInit, IXposedHookInitP
         @SuppressLint("UnsafeDynamicallyLoadedCode")
         fun loadNative() {
             if (nativeLoaded) {
-                xLog("[HookMain.loadNative] native libraries already loaded, skip on thread=${Thread.currentThread().name}")
                 return
             }
-            xLog("[HookMain.loadNative] starting to load native libraries from modulePath=$modulePath")
             nativeLoaded = true
             val libs = arrayOf(
                 "$modulePath/lib/arm64-v8a/libijkffmpeg.so",
@@ -69,7 +67,6 @@ class HookMain : IXposedHookLoadPackage, IXposedHookZygoteInit, IXposedHookInitP
                 "$modulePath/lib/x86_64/libencoder.so",
 
             )
-            xLog("[HookMain.loadNative] prepared ${libs.size} library paths for loading")
             libs.forEach {
                 try {
                     System.load(it)
@@ -78,7 +75,6 @@ class HookMain : IXposedHookLoadPackage, IXposedHookZygoteInit, IXposedHookInitP
                     xLog("[HookMain.loadNative] failed to load $it\n${throwable.stackTraceToString()}")
                 }
             }
-            xLog("[HookMain.loadNative] finished loading native libraries")
         }
     }
 
@@ -88,29 +84,22 @@ class HookMain : IXposedHookLoadPackage, IXposedHookZygoteInit, IXposedHookInitP
 
 
     override fun initZygote(startupParam: StartupParam) {
-        xLog("[HookMain.initZygote] startupParam=${startupParam.modulePackageName} modulePath=${startupParam.modulePath}")
         modulePath = startupParam.modulePath.substring(0, startupParam.modulePath.lastIndexOf('/'))
         moduleRes = startupParam.modulePath
-        xLog("[HookMain.initZygote] resolved modulePath=$modulePath moduleRes=$moduleRes")
     }
 
     override fun handleInitPackageResources(resparam: XC_InitPackageResources.InitPackageResourcesParam?) {
-        xLog("[HookMain.handleInitPackageResources] called for package=${resparam?.packageName} res=${resparam?.res}")
         xResources = resparam?.res
         if (moduleRes == null || resparam?.res == null) {
-            xLog("[HookMain.handleInitPackageResources] moduleRes or res is null, skip registering resources")
             return
         }
         val modRes = XModuleResources.createInstance(moduleRes, resparam.res)
-        xLog("[HookMain.handleInitPackageResources] created module resources, dispatching to hooks=${hooks.size}")
         hooks.forEach {
-            xLog("[HookMain.handleInitPackageResources] registering resources for hook=${it.getName()}")
             it.registerRes(modRes)
         }
     }
 
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
-        xLog("[HookMain.handleLoadPackage] incoming package=${lpparam.packageName} process=${lpparam.processName} appInfo=${lpparam.appInfo}")
         HookUtils.init(lpparam)
 
         if (lpparam.packageName == null || lpparam.packageName == MODULE_PACKAGE) {
@@ -121,14 +110,12 @@ class HookMain : IXposedHookLoadPackage, IXposedHookZygoteInit, IXposedHookInitP
         hooks.forEach {
             xLog("init>>>>${it.getName()}>>>> package: ${lpparam.packageName} process: ${lpparam.processName}")
             loadNative()
-            xLog("[HookMain.handleLoadPackage] installing Instrumentation hook for ${it.getName()}")
             XposedHelpers.findAndHookMethod(
                 Instrumentation::class.java,
                 "callApplicationOnCreate",
                 Application::class.java,
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
-                        xLog("[HookMain.handleLoadPackage] Instrumentation.callApplicationOnCreate afterHooked for ${lpparam.packageName}")
                         init(it, lpparam)
                     }
                 }
@@ -138,11 +125,8 @@ class HookMain : IXposedHookLoadPackage, IXposedHookZygoteInit, IXposedHookInitP
 
 
     fun init(hook: IHook, lpparam: XC_LoadPackage.LoadPackageParam?) {
-        xLog("[HookMain.init] preparing hook=${hook.getName()} with classLoader=${lpparam?.classLoader}")
         hook.init(lpparam?.classLoader)
-        xLog("[HookMain.init] invoking hook.hook for ${hook.getName()} on package=${lpparam?.packageName}")
         hook.hook(lpparam)
-        xLog("[HookMain.init] completed hook initialisation for ${hook.getName()}")
     }
 
 
