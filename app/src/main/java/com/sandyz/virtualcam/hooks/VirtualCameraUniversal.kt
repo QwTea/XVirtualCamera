@@ -1,8 +1,5 @@
 package com.sandyz.virtualcam.hooks
 
-import android.content.ContentResolver
-import android.content.ContentValues
-import android.content.res.AssetFileDescriptor
 import android.content.res.XModuleResources
 import android.graphics.Bitmap
 import android.graphics.Matrix
@@ -15,13 +12,8 @@ import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.params.InputConfiguration
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
-import android.net.Uri
 import android.os.Build
-import android.os.CancellationSignal
 import android.os.Handler
-import android.os.Looper
-import android.os.ParcelFileDescriptor
-import android.provider.MediaStore
 import android.view.PixelCopy
 import android.view.Surface
 import android.view.SurfaceHolder
@@ -40,121 +32,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import tv.danmaku.ijk.media.player.IjkMediaPlayer
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.FileOutputStream
-import java.io.FilterOutputStream
-import java.io.OutputStream
-import java.util.Collections
-import java.util.Locale
-import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlin.math.min
-
-object PhotoSwapState {
-    @Volatile
-    var lastStillCaptureAt: Long = 0L
-
-    @Volatile
-    private var active: Boolean = false
-
-    private val uriSet = Collections.synchronizedSet(mutableSetOf<Uri>())
-    private val activeUriSet = Collections.synchronizedSet(mutableSetOf<Uri>())
-    private val pathSet = Collections.synchronizedSet(mutableSetOf<String>())
-    private val activePathSet = Collections.synchronizedSet(mutableSetOf<String>())
-    private val streamPathMap = Collections.synchronizedMap(WeakHashMap<Any, String>())
-    private val pfdMap = Collections.synchronizedMap(WeakHashMap<ParcelFileDescriptor, Pair<ContentResolver, Uri>>())
-
-    private val reentry = ThreadLocal<Boolean>()
-
-    fun markStillCapture() {
-        lastStillCaptureAt = System.currentTimeMillis()
-        active = true
-        xLog("[Swap] still capture window opened")
-    }
-
-    fun inWindow(ttlMs: Long = 5000L): Boolean {
-        val within = System.currentTimeMillis() - lastStillCaptureAt < ttlMs
-        if (!within) {
-            active = false
-            activeUriSet.clear()
-            activePathSet.clear()
-        }
-        return within
-    }
-
-    private fun shouldIntercept(): Boolean = active && inWindow()
-
-    fun trackUri(uri: Uri) {
-        if (!inWindow()) {
-            lastStillCaptureAt = System.currentTimeMillis()
-        }
-        uriSet.add(uri)
-        active = true
-    }
-
-    fun claimUri(uri: Uri): Boolean {
-        if (!shouldIntercept()) return false
-        if (activeUriSet.contains(uri)) return true
-        val claimed = uriSet.remove(uri) || active
-        if (claimed) {
-            activeUriSet.add(uri)
-        }
-        return claimed
-    }
-
-    fun releaseUri(uri: Uri) {
-        activeUriSet.remove(uri)
-    }
-
-    fun trackPath(path: String) {
-        if (!inWindow()) {
-            lastStillCaptureAt = System.currentTimeMillis()
-        }
-        pathSet.add(path)
-        active = true
-    }
-
-    fun claimPath(path: String): Boolean {
-        if (!shouldIntercept()) return false
-        if (activePathSet.contains(path)) return true
-        val claimed = pathSet.remove(path) || active
-        if (claimed) {
-            activePathSet.add(path)
-        }
-        return claimed
-    }
-
-    fun releasePath(path: String) {
-        activePathSet.remove(path)
-    }
-
-    fun associateStream(stream: Any, path: String) {
-        streamPathMap[stream] = path
-    }
-
-    fun consumeStreamPath(stream: Any): String? = streamPathMap.remove(stream)
-
-    fun trackPfd(pfd: ParcelFileDescriptor, resolver: ContentResolver, uri: Uri) {
-        pfdMap[pfd] = resolver to uri
-    }
-
-    fun consumePfd(pfd: ParcelFileDescriptor): Pair<ContentResolver, Uri>? = pfdMap.remove(pfd)
-
-    fun isSelfCall(): Boolean = reentry.get() == true
-
-    fun enterSelf(): Boolean {
-        if (isSelfCall()) return false
-        reentry.set(true)
-        return true
-    }
-
-    fun exitSelf() {
-        reentry.set(false)
-    }
-}
 
 class VirtualCameraUniversal : IHook {
 
@@ -166,9 +45,6 @@ class VirtualCameraUniversal : IHook {
 
     private val camera2Pipeline = Camera2Pipeline()
     private val camera1Pipeline = Camera1Pipeline()
-    private val contentResolverHooksInstalled = AtomicBoolean(false)
-    private val fileOutputStreamHooksInstalled = AtomicBoolean(false)
-    private val parcelFileDescriptorHookInstalled = AtomicBoolean(false)
 
     override fun init(cl: ClassLoader?) {
         xLog("[VirtualCameraUniversal.init] classLoader=$cl")
@@ -195,8 +71,6 @@ class VirtualCameraUniversal : IHook {
         private var ijkMediaPlayer: IjkMediaPlayer? = null
         private var sessionStateCallbackClazz: Class<*>? = null
         private val intercepting = AtomicBoolean(false)
-        private val protectedTargets = Collections.newSetFromMap(WeakHashMap<Surface, Boolean>())
-        private val builderTemplates = WeakHashMap<Any, Int>()
 
         fun installHooks(lpparam: LoadPackageParam) {
             xLog("[Camera2Pipeline.installHooks] installing for package=${lpparam.packageName} classLoader=${lpparam.classLoader}")
@@ -207,15 +81,11 @@ class VirtualCameraUniversal : IHook {
             val classLoader = lpparam.classLoader ?: return
             xLog("[Camera2Pipeline.installHooks] proceeding with classLoader=$classLoader")
             hookImageReader(classLoader)
-            hookCreateCaptureRequest(classLoader)
             hookCreateCaptureSessionApi28(classLoader, lpparam)
             hookCreateCaptureSessionLegacy(classLoader)
             hookOppoCreateCaptureSession(classLoader)
-            hookProtectConsumerSurfaces(classLoader)
             hookAddTarget(classLoader)
             hookTextureViewConstructors(classLoader)
-            hookContentResolver(classLoader)
-            hookFileOutputStream()
             xLog("[Camera2Pipeline.installHooks] hook registration finished")
         }
 
@@ -244,86 +114,6 @@ class VirtualCameraUniversal : IHook {
             }
         }
 
-        private fun hookCreateCaptureRequest(classLoader: ClassLoader) {
-            try {
-                XposedHelpers.findAndHookMethod(
-                    "android.hardware.camera2.impl.CameraDeviceImpl",
-                    classLoader,
-                    "createCaptureRequest",
-                    Int::class.javaPrimitiveType,
-                    object : XC_MethodHook() {
-                        override fun afterHookedMethod(param: MethodHookParam) {
-                            val template = param.args[0] as? Int ?: return
-                            val builder = param.result ?: return
-                            builderTemplates[builder] = template
-                            if (template == CaptureRequest.TEMPLATE_STILL_CAPTURE) {
-                                PhotoSwapState.markStillCapture()
-                            }
-                            xLog("[C2] createCaptureRequest template=$template builder=$builder")
-                        }
-                    }
-                )
-            } catch (t: Throwable) {
-                logHookFailure("Camera2.hookCreateCaptureRequest", t)
-            }
-        }
-
-        private fun hookProtectConsumerSurfaces(classLoader: ClassLoader) {
-            try {
-                XposedHelpers.findAndHookMethod(
-                    "android.media.ImageReader",
-                    classLoader,
-                    "getSurface",
-                    object : XC_MethodHook() {
-                        override fun afterHookedMethod(param: MethodHookParam) {
-                            (param.result as? Surface)?.let {
-                                protectedTargets.add(it)
-                                xLog("[C2] protect ImageReader surface=$it")
-                            }
-                        }
-                    }
-                )
-            } catch (t: Throwable) {
-                logHookFailure("Camera2.hookProtect.ImageReader", t)
-            }
-
-            try {
-                XposedHelpers.findAndHookMethod(
-                    "android.media.MediaRecorder",
-                    classLoader,
-                    "getSurface",
-                    object : XC_MethodHook() {
-                        override fun afterHookedMethod(param: MethodHookParam) {
-                            (param.result as? Surface)?.let {
-                                protectedTargets.add(it)
-                                xLog("[C2] protect MediaRecorder surface=$it")
-                            }
-                        }
-                    }
-                )
-            } catch (t: Throwable) {
-                logHookFailure("Camera2.hookProtect.MediaRecorder", t)
-            }
-
-            try {
-                XposedHelpers.findAndHookMethod(
-                    "android.media.MediaCodec",
-                    classLoader,
-                    "createPersistentInputSurface",
-                    object : XC_MethodHook() {
-                        override fun afterHookedMethod(param: MethodHookParam) {
-                            (param.result as? Surface)?.let {
-                                protectedTargets.add(it)
-                                xLog("[C2] protect persistent input surface=$it")
-                            }
-                        }
-                    }
-                )
-            } catch (t: Throwable) {
-                logHookFailure("Camera2.hookProtect.MediaCodec", t)
-            }
-        }
-
         private fun hookCreateCaptureSessionApi28(classLoader: ClassLoader, lpparam: LoadPackageParam) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
                 xLog("[Camera2Pipeline.hookCreateCaptureSessionApi28] skipping due to SDK ${Build.VERSION.SDK_INT}")
@@ -339,30 +129,29 @@ class VirtualCameraUniversal : IHook {
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
                             val sessionConfiguration = param.args[0] as SessionConfiguration
+                            xLog("[Camera2Pipeline.hookCreateCaptureSessionApi28] original sessionConfiguration=$sessionConfiguration")
                             resetSurface()
                             intercepting.set(true)
-                            val outputs = sessionConfiguration.outputConfigurations.toMutableList()
-                            ensureNullSurface()
-                            nullSurface?.let { outputs.add(OutputConfiguration(it)) }
-
-                            val redirected = SessionConfiguration(
-                                sessionConfiguration.sessionType,
-                                outputs,
-                                sessionConfiguration.executor,
-                                sessionConfiguration.stateCallback
-                            )
-                            sessionConfiguration.inputConfiguration?.let { redirected.setInputConfiguration(it) }
-                            try {
-                                val sessionParams = sessionConfiguration.sessionParameters
-                                if (sessionParams != null) {
-                                    redirected.setSessionParameters(sessionParams)
-                                }
-                            } catch (_: Throwable) {
-                                // ignore reflection issues on lower API levels
+                            xLog("[Camera2Pipeline.hookCreateCaptureSessionApi28] intercepting capture session, intercepting=${intercepting.get()}")
+                            val surfaces = mutableListOf<Surface?>()
+                            sessionConfiguration.outputConfigurations.forEach {
+                                surfaces.add(it.surface)
                             }
-                            param.args[0] = redirected
+                            xLog(
+                                "${lpparam.packageName} createCaptureSession surfaces:$surfaces redirect:$nullSurface"
+                            )
+                            val outputConfiguration = nullSurface?.let { OutputConfiguration(it) }
+                            if (outputConfiguration != null) {
+                                val redirectedConfiguration = SessionConfiguration(
+                                    sessionConfiguration.sessionType,
+                                    listOf(outputConfiguration),
+                                    sessionConfiguration.executor,
+                                    sessionConfiguration.stateCallback
+                                )
+                                xLog("[Camera2Pipeline.hookCreateCaptureSessionApi28] redirecting to placeholder surface=$nullSurface")
+                                param.args[0] = redirectedConfiguration
+                            }
                             hookSessionStateCallback(sessionConfiguration.stateCallback.javaClass)
-                            xLog("[C2] createCaptureSession(api28+) added nullSurface=$nullSurface outputs=${outputs.size}")
                         }
                     }
                 )
@@ -388,14 +177,16 @@ class VirtualCameraUniversal : IHook {
                     Handler::class.java,
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
+                            @Suppress("UNCHECKED_CAST")
+                            val surfaces = param.args[0] as? List<Surface>
+                            if (surfaces.isNullOrEmpty()) {
+                                xLog("[Camera2Pipeline.hookCreateCaptureSessionLegacy] no surfaces provided, skipping redirect")
+                                return
+                            }
                             resetSurface()
                             intercepting.set(true)
-                            ensureNullSurface()
-                            @Suppress("UNCHECKED_CAST")
-                            val surfaces = (param.args[0] as? List<Surface>)?.toMutableList() ?: return
-                            nullSurface?.let { surfaces.add(it) }
-                            param.args[0] = surfaces
-                            xLog("[C2] createCaptureSession(legacy) appended nullSurface=$nullSurface size=${surfaces.size}")
+                            xLog("camera2 legacy createCaptureSession surfaces:$surfaces redirect:$nullSurface")
+                            param.args[0] = listOfNotNull(nullSurface)
                         }
                     }
                 )
@@ -424,14 +215,14 @@ class VirtualCameraUniversal : IHook {
                     Handler::class.java,
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
+                            @Suppress("UNCHECKED_CAST")
+                            val requestedSurfaces = (param.args[2] as? List<Any?>)?.mapNotNull {
+                                it as? Surface
+                            }
                             resetSurface()
                             intercepting.set(true)
-                            ensureNullSurface()
-                            @Suppress("UNCHECKED_CAST")
-                            val requested = (param.args[2] as? List<OutputConfiguration>)?.toMutableList() ?: return
-                            nullSurface?.let { requested.add(OutputConfiguration(it)) }
-                            param.args[2] = requested
-                            xLog("[C2] OPPO createCustomCaptureSession appended nullSurface=$nullSurface size=${requested.size}")
+                            xLog("oppo createCustomCaptureSession surfaces:$requestedSurfaces redirect:$nullSurface")
+                            param.args[2] = listOfNotNull(nullSurface?.let { OutputConfiguration(it) })
                         }
                     }
                 )
@@ -451,27 +242,20 @@ class VirtualCameraUniversal : IHook {
                     Surface::class.java,
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
-                            if (!intercepting.get()) return
-                            val builder = param.thisObject
-                            val template = builderTemplates[builder] ?: -1
-                            val surface = param.args[0] as? Surface ?: return
-
-                            if (protectedTargets.contains(surface)) {
-                                xLog("[C2] addTarget protected -> pass $surface (template=$template)")
+                            if (!intercepting.get()) {
+                                xLog("[Camera2Pipeline.hookAddTarget] not intercepting, leaving surface untouched")
                                 return
                             }
-
-                            xLog("[C2] addTarget PREVIEW-like surface=$surface (template=$template)")
-
+                            val surface = param.args[0] as? Surface ?: return
+                            xLog("camera2 addTarget surface:$surface")
                             if (virtualSurface == null) {
+                                xLog("[Camera2Pipeline.hookAddTarget] caching virtual surface=$surface")
                                 virtualSurface = surface
                                 resetIjkMediaPlayer()
                                 PlayIjk.play(virtualSurface, ijkMediaPlayer)
                             }
                             ensureNullSurface()
-                            nullSurface?.let {
-                                param.args[0] = it
-                            }
+                            param.args[0] = nullSurface
                         }
                     }
                 )
@@ -510,7 +294,6 @@ class VirtualCameraUniversal : IHook {
                     CameraCaptureSession::class.java,
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
-                            intercepting.set(false)
                             xLog("camera2 session configured")
                         }
                     }
@@ -527,7 +310,6 @@ class VirtualCameraUniversal : IHook {
                     CameraCaptureSession::class.java,
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
-                            intercepting.set(false)
                             xLog("camera2 session configure failed")
                         }
                     }
@@ -567,8 +349,6 @@ class VirtualCameraUniversal : IHook {
             ijkMediaPlayer = IjkMediaPlayer {}
             xLog("[Camera2Pipeline.resetIjkMediaPlayer] created new IjkMediaPlayer instance=$ijkMediaPlayer")
         }
-
-        fun currentVirtualSurface(): Surface? = virtualSurface
     }
 
     private inner class Camera1Pipeline {
@@ -847,14 +627,6 @@ class VirtualCameraUniversal : IHook {
             xLog("[Camera1Pipeline.resetIjkMediaPlayer] created new IjkMediaPlayer instance=$ijkMediaPlayer")
         }
 
-        fun currentSurface(): Surface? = virtualSurfaceView?.holder?.surface
-
-        fun previewSize(): Pair<Int, Int>? = if (width > 0 && height > 0) {
-            width to height
-        } else {
-            null
-        }
-
         private fun getRotateBitmap(bitmap: Bitmap?, rotateDegree: Float, width: Int, height: Int): Bitmap? {
             xLog("[Camera1Pipeline.getRotateBitmap] bitmap=$bitmap rotateDegree=$rotateDegree width=$width height=$height")
             bitmap ?: return null
@@ -890,409 +662,6 @@ class VirtualCameraUniversal : IHook {
             } else {
                 xLog("PixelCopy unsupported below Android N")
             }
-        }
-    }
-
-    private fun hookContentResolver(classLoader: ClassLoader) {
-        if (!contentResolverHooksInstalled.compareAndSet(false, true)) {
-            return
-        }
-
-        try {
-            XposedHelpers.findAndHookMethod(
-                ContentResolver::class.java,
-                "insert",
-                Uri::class.java,
-                ContentValues::class.java,
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        if (PhotoSwapState.isSelfCall()) return
-                        val uri = param.result as? Uri ?: return
-                        val values = param.args[1] as? ContentValues
-                        val mime = values?.getAsString(MediaStore.MediaColumns.MIME_TYPE)
-                        if (!"image/jpeg".equals(mime, ignoreCase = true)) return
-                        if (!PhotoSwapState.inWindow()) return
-                        PhotoSwapState.trackUri(uri)
-                        xLog("[Swap] track insert uri=$uri mime=$mime")
-                    }
-                }
-            )
-        } catch (t: Throwable) {
-            logHookFailure("Swap.hookCR.insert", t)
-        }
-
-        val openOutputStreamHook = object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam) {
-                if (PhotoSwapState.isSelfCall()) return
-                val uri = param.args[0] as? Uri ?: return
-                val mode = param.args.getOrNull(1) as? String
-                if (mode != null && !mode.contains("w", ignoreCase = true)) return
-                if (!PhotoSwapState.claimUri(uri)) return
-                val original = param.result as? OutputStream ?: return
-                val resolver = param.thisObject as? ContentResolver ?: return
-                param.result = SwappingOutputStream(resolver, uri, original)
-                xLog("[Swap] wrapped OutputStream for $uri mode=$mode")
-            }
-        }
-
-        try {
-            XposedHelpers.findAndHookMethod(
-                ContentResolver::class.java,
-                "openOutputStream",
-                Uri::class.java,
-                openOutputStreamHook
-            )
-        } catch (t: Throwable) {
-            logHookFailure("Swap.hookCR.openOutputStream", t)
-        }
-
-        try {
-            XposedHelpers.findAndHookMethod(
-                ContentResolver::class.java,
-                "openOutputStream",
-                Uri::class.java,
-                String::class.java,
-                openOutputStreamHook
-            )
-        } catch (t: Throwable) {
-            logHookFailure("Swap.hookCR.openOutputStreamMode", t)
-        }
-
-        val openFileDescriptorHook = object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam) {
-                if (PhotoSwapState.isSelfCall()) return
-                val uri = param.args[0] as? Uri ?: return
-                val mode = param.args[1] as? String ?: return
-                if (!mode.contains("w", ignoreCase = true)) return
-                if (!PhotoSwapState.claimUri(uri)) return
-                val resolver = param.thisObject as? ContentResolver ?: return
-                val pfd = param.result as? ParcelFileDescriptor ?: return
-                PhotoSwapState.trackPfd(pfd, resolver, uri)
-                xLog("[Swap] track ParcelFileDescriptor uri=$uri mode=$mode")
-            }
-        }
-
-        try {
-            XposedHelpers.findAndHookMethod(
-                ContentResolver::class.java,
-                "openFileDescriptor",
-                Uri::class.java,
-                String::class.java,
-                openFileDescriptorHook
-            )
-        } catch (t: Throwable) {
-            logHookFailure("Swap.hookCR.openFileDescriptor", t)
-        }
-
-        try {
-            XposedHelpers.findAndHookMethod(
-                ContentResolver::class.java,
-                "openFileDescriptor",
-                Uri::class.java,
-                String::class.java,
-                CancellationSignal::class.java,
-                openFileDescriptorHook
-            )
-        } catch (t: Throwable) {
-            logHookFailure("Swap.hookCR.openFileDescriptorSignal", t)
-        }
-
-        val openAssetFileDescriptorHook = object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam) {
-                if (PhotoSwapState.isSelfCall()) return
-                val uri = param.args[0] as? Uri ?: return
-                val mode = param.args[1] as? String ?: return
-                if (!mode.contains("w", ignoreCase = true)) return
-                if (!PhotoSwapState.claimUri(uri)) return
-                val resolver = param.thisObject as? ContentResolver ?: return
-                val asset = param.result as? AssetFileDescriptor ?: return
-                val pfd = asset.parcelFileDescriptor ?: return
-                PhotoSwapState.trackPfd(pfd, resolver, uri)
-                xLog("[Swap] track AssetFileDescriptor uri=$uri mode=$mode")
-            }
-        }
-
-        try {
-            XposedHelpers.findAndHookMethod(
-                ContentResolver::class.java,
-                "openAssetFileDescriptor",
-                Uri::class.java,
-                String::class.java,
-                openAssetFileDescriptorHook
-            )
-        } catch (t: Throwable) {
-            logHookFailure("Swap.hookCR.openAssetFileDescriptor", t)
-        }
-
-        hookParcelFileDescriptor()
-    }
-
-    private fun hookParcelFileDescriptor() {
-        if (!parcelFileDescriptorHookInstalled.compareAndSet(false, true)) {
-            return
-        }
-        try {
-            XposedHelpers.findAndHookMethod(
-                ParcelFileDescriptor::class.java,
-                "close",
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        if (PhotoSwapState.isSelfCall()) return
-                        val pair = PhotoSwapState.consumePfd(param.thisObject as ParcelFileDescriptor) ?: return
-                        val (resolver, uri) = pair
-                        if (!PhotoSwapState.enterSelf()) {
-                            PhotoSwapState.releaseUri(uri)
-                            return
-                        }
-                        try {
-                            val bytes = captureReplacementJpeg()
-                            if (bytes != null) {
-                                resolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
-                                xLog("[Swap] replaced JPEG for $uri via PFD size=${bytes.size}")
-                            } else {
-                                xLog("[Swap] capture frame failed for $uri via PFD")
-                            }
-                        } catch (t: Throwable) {
-                            xLog("[Swap] replace failed for $uri via PFD: ${t.message}")
-                        } finally {
-                            PhotoSwapState.exitSelf()
-                            PhotoSwapState.releaseUri(uri)
-                        }
-                    }
-                }
-            )
-        } catch (t: Throwable) {
-            logHookFailure("Swap.hookPFD.close", t)
-        }
-    }
-
-    private fun hookFileOutputStream() {
-        if (!fileOutputStreamHooksInstalled.compareAndSet(false, true)) {
-            return
-        }
-        val className = "java.io.FileOutputStream"
-
-        fun track(stream: Any, path: String?) {
-            if (PhotoSwapState.isSelfCall()) return
-            val actual = path ?: return
-            if (!PhotoSwapState.inWindow()) return
-            val lower = actual.lowercase(Locale.ROOT)
-            if (!lower.endsWith(".jpg") && !lower.endsWith(".jpeg")) return
-            PhotoSwapState.trackPath(actual)
-            PhotoSwapState.associateStream(stream, actual)
-            xLog("[Swap] track path=$actual stream=$stream")
-        }
-
-        try {
-            XposedHelpers.findAndHookConstructor(
-                className,
-                String::class.java,
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        track(param.thisObject, param.args[0] as? String)
-                    }
-                }
-            )
-        } catch (t: Throwable) {
-            logHookFailure("Swap.hookFOS.string", t)
-        }
-
-        try {
-            XposedHelpers.findAndHookConstructor(
-                className,
-                File::class.java,
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        track(param.thisObject, (param.args[0] as? File)?.absolutePath)
-                    }
-                }
-            )
-        } catch (t: Throwable) {
-            logHookFailure("Swap.hookFOS.file", t)
-        }
-
-        try {
-            XposedHelpers.findAndHookConstructor(
-                className,
-                File::class.java,
-                Boolean::class.javaPrimitiveType,
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        track(param.thisObject, (param.args[0] as? File)?.absolutePath)
-                    }
-                }
-            )
-        } catch (t: Throwable) {
-            logHookFailure("Swap.hookFOS.fileAppend", t)
-        }
-
-        try {
-            XposedHelpers.findAndHookMethod(
-                className,
-                null,
-                "close",
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        if (PhotoSwapState.isSelfCall()) return
-                        val stream = param.thisObject
-                        val path = PhotoSwapState.consumeStreamPath(stream) ?: return
-                        val shouldSwap = PhotoSwapState.claimPath(path)
-                        if (!shouldSwap) {
-                            PhotoSwapState.releasePath(path)
-                            return
-                        }
-                        if (!PhotoSwapState.enterSelf()) {
-                            PhotoSwapState.releasePath(path)
-                            return
-                        }
-                        try {
-                            val bytes = captureReplacementJpeg()
-                            if (bytes != null) {
-                                FileOutputStream(File(path), false).use { it.write(bytes) }
-                                xLog("[Swap] replaced JPEG file $path size=${bytes.size}")
-                            } else {
-                                xLog("[Swap] capture frame failed for file $path")
-                            }
-                        } catch (t: Throwable) {
-                            xLog("[Swap] file replace failed for $path: ${t.message}")
-                        } finally {
-                            PhotoSwapState.exitSelf()
-                            PhotoSwapState.releasePath(path)
-                        }
-                    }
-                }
-            )
-        } catch (t: Throwable) {
-            logHookFailure("Swap.hookFOS.close", t)
-        }
-    }
-
-    private inner class SwappingOutputStream(
-        private val resolver: ContentResolver,
-        private val uri: Uri,
-        out: OutputStream
-    ) : FilterOutputStream(out) {
-        private var closed = false
-
-        override fun close() {
-            if (closed) return
-            closed = true
-            try {
-                super.close()
-            } catch (t: Throwable) {
-                xLog("[Swap] original stream close failed for $uri: ${t.message}")
-            }
-            if (!PhotoSwapState.enterSelf()) {
-                PhotoSwapState.releaseUri(uri)
-                return
-            }
-            try {
-                val bytes = captureReplacementJpeg()
-                if (bytes != null) {
-                    resolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
-                    xLog("[Swap] replaced JPEG for $uri size=${bytes.size}")
-                } else {
-                    xLog("[Swap] capture frame failed for $uri")
-                }
-            } catch (t: Throwable) {
-                xLog("[Swap] replace failed for $uri: ${t.message}")
-            } finally {
-                PhotoSwapState.exitSelf()
-                PhotoSwapState.releaseUri(uri)
-            }
-        }
-    }
-
-    private fun captureReplacementJpeg(): ByteArray? {
-        val previewSize = camera1Pipeline.previewSize()
-        val frame = captureVideoFrameBitmapSync(previewSize?.first, previewSize?.second) ?: return null
-        val rotated = rotateUpright(frame)
-        return try {
-            val bytes = bitmapToJpegBytes(rotated, 90)
-            if (rotated !== frame) {
-                frame.recycle()
-            }
-            rotated.recycle()
-            bytes
-        } catch (t: Throwable) {
-            xLog("[Swap] encode JPEG failed: ${t.message}")
-            if (!frame.isRecycled) frame.recycle()
-            if (!rotated.isRecycled) rotated.recycle()
-            null
-        }
-    }
-
-    private fun captureVideoFrameBitmapSync(targetW: Int?, targetH: Int?, timeoutMs: Long = 200L): Bitmap? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            xLog("[Swap] PixelCopy unsupported on API ${Build.VERSION.SDK_INT}")
-            return null
-        }
-        val surface = camera2Pipeline.currentVirtualSurface()
-            ?: camera1Pipeline.currentSurface()
-            ?: return null
-        val defaultSize = camera1Pipeline.previewSize()
-            ?: HookUtils.getTopActivity()?.window?.decorView?.let { view ->
-                if (view.width > 0 && view.height > 0) view.width to view.height else null
-            }
-            ?: (1080 to 1920)
-        val width = targetW ?: defaultSize.first
-        val height = targetH ?: defaultSize.second
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val handlerLooper = HookUtils.getTopActivity()?.mainLooper ?: Looper.getMainLooper()
-        val looper = handlerLooper ?: return null
-        val handler = Handler(looper)
-        val latch = CountDownLatch(1)
-        var success = false
-        try {
-            PixelCopy.request(
-                surface,
-                bitmap,
-                { result ->
-                    success = result == PixelCopy.SUCCESS
-                    latch.countDown()
-                },
-                handler
-            )
-        } catch (t: Throwable) {
-            xLog("[Swap] PixelCopy request failed: ${t.message}")
-            bitmap.recycle()
-            return null
-        }
-        try {
-            if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS) || !success) {
-                bitmap.recycle()
-                return null
-            }
-        } catch (t: InterruptedException) {
-            Thread.currentThread().interrupt()
-            bitmap.recycle()
-            return null
-        }
-        return bitmap
-    }
-
-    private fun rotateUpright(src: Bitmap): Bitmap {
-        val activity = HookUtils.getTopActivity()
-        val rotation = activity?.windowManager?.defaultDisplay?.rotation ?: Surface.ROTATION_0
-        val degrees = when (rotation) {
-            Surface.ROTATION_90 -> 90
-            Surface.ROTATION_180 -> 180
-            Surface.ROTATION_270 -> 270
-            else -> 0
-        }
-        if (degrees == 0) {
-            return src
-        }
-        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, Matrix().apply {
-            postRotate(degrees.toFloat())
-        }, true)
-    }
-
-    private fun bitmapToJpegBytes(bitmap: Bitmap, quality: Int = 90): ByteArray {
-        val stream = ByteArrayOutputStream()
-        return stream.use {
-            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, it)
-            it.toByteArray()
         }
     }
 }
