@@ -256,7 +256,7 @@ class VirtualCameraUniversal : IHook {
                             val template = param.args[0] as? Int ?: return
                             val builder = param.result ?: return
                             builderTemplates[builder] = template
-                            if (template == CaptureRequest.TEMPLATE_STILL_CAPTURE) {
+                            if (template == CameraDevice.TEMPLATE_STILL_CAPTURE) {
                                 PhotoSwapState.markStillCapture()
                             }
                             xLog("[C2] createCaptureRequest template=$template builder=$builder")
