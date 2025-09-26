@@ -111,14 +111,12 @@ class HookMain : IXposedHookLoadPackage, IXposedHookZygoteInit, IXposedHookInitP
 
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
         xLog("[HookMain.handleLoadPackage] incoming package=${lpparam.packageName} process=${lpparam.processName} appInfo=${lpparam.appInfo}")
-        // 1) Сразу выходим для собственного APK модуля
+        HookUtils.init(lpparam)
+
         if (lpparam.packageName == null || lpparam.packageName == MODULE_PACKAGE) {
             xLog("skip init for package: ${lpparam.packageName} process: ${lpparam.processName}")
             return
         }
-
-        // 2) Общая инициализация — только в целевых процессах
-        HookUtils.init(lpparam)
 
         hooks.forEach {
             xLog("init>>>>${it.getName()}>>>> package: ${lpparam.packageName} process: ${lpparam.processName}")

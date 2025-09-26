@@ -3,7 +3,6 @@ package com.sandyz.virtualcam.utils
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
-import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
@@ -13,6 +12,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import com.sandyz.virtualcam.hooks.IHook
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -30,36 +30,6 @@ import kotlin.coroutines.CoroutineContext
  *@date 2023/11/18
  *@description
  */
-
-private const val TAG = "VirtualCam"
-
-private fun tryXposedLog(msg: String): Boolean {
-    return try {
-        val cls = Class.forName(
-            "de.robv.android.xposed.XposedBridge",
-            false,
-            HookUtils::class.java.classLoader
-        )
-        val m = cls.getMethod("log", String::class.java)
-        m.invoke(null, msg)
-        true
-    } catch (_: Throwable) {
-        false
-    }
-}
-
-/** Безопасный лог: в Xposed-процессах пишет в Xposed, в обычных — в Logcat. */
-@JvmOverloads
-fun xLog(msg: String, level: Int = Log.INFO) {
-    if (tryXposedLog(msg)) return
-    when (level) {
-        Log.VERBOSE -> Log.v(TAG, msg)
-        Log.DEBUG -> Log.d(TAG, msg)
-        Log.WARN -> Log.w(TAG, msg)
-        Log.ERROR -> Log.e(TAG, msg)
-        else -> Log.i(TAG, msg)
-    }
-}
 
 @SuppressLint("StaticFieldLeak")
 object HookUtils {
@@ -195,7 +165,7 @@ object HookUtils {
         val instrumentation = XposedHelpers.findClass(
             "android.app.Instrumentation", lpparam.classLoader
         )
-        de.robv.android.xposed.XposedBridge.hookAllMethods(instrumentation, "callApplicationOnCreate", object : XC_MethodHook() {
+        XposedBridge.hookAllMethods(instrumentation, "callApplicationOnCreate", object : XC_MethodHook() {
             @Throws(Throwable::class)
             override fun afterHookedMethod(param: MethodHookParam) {
                 xLog("[HookUtils.init] callApplicationOnCreate afterHooked, captured application=${param.args.getOrNull(0)}")
@@ -207,7 +177,7 @@ object HookUtils {
         val activity = XposedHelpers.findClass(
             "android.app.Activity", lpparam.classLoader
         )
-        de.robv.android.xposed.XposedBridge.hookAllConstructors(activity, object : XC_MethodHook() {
+        XposedBridge.hookAllConstructors(activity, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
                 xLog("[HookUtils.init] Activity constructed instance=${param.thisObject}")
                 if (!getActivities().contains(param.thisObject)) {
@@ -220,16 +190,16 @@ object HookUtils {
 
 }
 
-fun IHook.xLog(msg: String?, level: Int = Log.INFO) {
-    xLog("[${this::class.java.simpleName} ${Thread.currentThread().id}] ${msg ?: "null"}", level)
+fun IHook.xLog(msg: String?) {
+    XposedBridge.log("[${this::class.java.simpleName} ${Thread.currentThread().id}] $msg")
 }
 
 fun xLog(msg: String?) {
-    xLog("[${Thread.currentThread().id}] ${msg ?: "null"}")
+    XposedBridge.log("[${Thread.currentThread().id}] $msg")
 }
 
 fun xLog(param: XC_MethodHook.MethodHookParam?, msg: String?, depth: Int = 15) {
-    xLog(msg ?: "null")
+    xLog(msg)
     if (param == null) {
         return
     }
@@ -247,10 +217,10 @@ fun xLog(param: XC_MethodHook.MethodHookParam?, msg: String?, depth: Int = 15) {
 
 fun xLogTrace(param: XC_MethodHook.MethodHookParam?, msg: String?) {
     if (param == null) {
-        xLog(msg ?: "null")
+        xLog(msg)
         return
     }
-    xLog(msg ?: "null")
+    xLog(msg)
     val stackTrace = Thread.currentThread().stackTrace as Array<StackTraceElement>
     stackTrace.forEach {
         xLog("          ${it.className}.${it.methodName}")
