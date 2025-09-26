@@ -1,6 +1,5 @@
 package com.sandyz.virtualcam.hooks
 
-import com.sandyz.virtualcam.utils.xLog
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -33,11 +32,8 @@ class MyCoroutineScope : CoroutineScope {
         }
 }
 fun main() = runBlocking {
-    xLog("[Test.main] starting runBlocking context=$coroutineContext")
     val coroutineScope = MyCoroutineScope()
-    xLog("[Test.main] created MyCoroutineScope=$coroutineScope")
     coroutineScope.launch {
-        xLog("[Test.main] launch repeating coroutine")
         while (true) {
             delay(500L)
             println("hello")
@@ -51,7 +47,5 @@ fun main() = runBlocking {
 
 
 fun println(msg: String) {
-    val formatted = "[${Thread.currentThread().name}]$msg"
-    kotlin.io.println(formatted)
-    xLog("[Test.println] $formatted")
+    kotlin.io.println("[${Thread.currentThread().name}]$msg")
 }
