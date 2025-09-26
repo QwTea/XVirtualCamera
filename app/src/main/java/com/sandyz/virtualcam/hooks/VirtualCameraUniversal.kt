@@ -1070,8 +1070,6 @@ class VirtualCameraUniversal : IHook {
         if (!fileOutputStreamHooksInstalled.compareAndSet(false, true)) {
             return
         }
-        val className = "java.io.FileOutputStream"
-
         fun track(stream: Any, path: String?) {
             if (PhotoSwapState.isSelfCall()) return
             val actual = path ?: return
@@ -1085,7 +1083,7 @@ class VirtualCameraUniversal : IHook {
 
         try {
             XposedHelpers.findAndHookConstructor(
-                className,
+                FileOutputStream::class.java,
                 String::class.java,
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
@@ -1099,7 +1097,7 @@ class VirtualCameraUniversal : IHook {
 
         try {
             XposedHelpers.findAndHookConstructor(
-                className,
+                FileOutputStream::class.java,
                 File::class.java,
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
@@ -1113,7 +1111,7 @@ class VirtualCameraUniversal : IHook {
 
         try {
             XposedHelpers.findAndHookConstructor(
-                className,
+                FileOutputStream::class.java,
                 File::class.java,
                 Boolean::class.javaPrimitiveType,
                 object : XC_MethodHook() {
@@ -1128,8 +1126,7 @@ class VirtualCameraUniversal : IHook {
 
         try {
             XposedHelpers.findAndHookMethod(
-                className,
-                null,
+                FileOutputStream::class.java,
                 "close",
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
